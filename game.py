@@ -2,6 +2,7 @@ import math
 import os
 
 import pygame
+import neat
 
 WIN_WIDTH = 800
 WIN_HEIGHT = 800
@@ -50,22 +51,6 @@ class Car:
         self.acceltick += 1
         self.rottick += 1
 
-        # # Get keypresses
-        # keys = pygame.key.get_pressed()
-        #
-        # if keys[pygame.K_UP]:
-        #     self.accel()
-        #     if keys[pygame.K_RIGHT]:
-        #         self.turnRight()
-        #     if keys[pygame.K_LEFT]:
-        #         self.turnLeft()
-        # if keys[pygame.K_DOWN]:
-        #     self.decel()
-        #     if keys[pygame.K_RIGHT]:
-        #         self.turnRight()
-        #     if keys[pygame.K_LEFT]:
-        #         self.turnLeft()
-
         # Friction
         if self.acceltick != 0:
             self.velX = (self.velX / self.acceltick)
@@ -105,14 +90,64 @@ class Car:
         return pygame.mask.from_surface(self.image)
 
 
-def draw_window(window, car):
-    window.fill([255,255,255])
+class Path:
+    def __init__(self):
+        self.image = PATH_IMAGE
+
+    def draw(self, window):
+        window.blit(self.image, (0, 0))
+
+    def collide(self, car):
+        car_mask = car.get_mask()
+        path_mask = pygame.mask.from_surface(self.image)
+
+        # Car coordinate minus 0 because the path is always drawn at 0, 0
+        offset = (0 - round(car.x), 0 - round(car.y))
+        collision_point = car_mask.overlap(path_mask, offset)
+
+        if collision_point:
+            return True;
+
+        return False
+
+
+class Target:
+    def __init__(self, x, y):
+        self.image = FINISH_IMAGE
+        self.x = x
+        self.y = y
+
+    def draw(self, window):
+        window.blit(self.image, (self.x, self.y))
+
+    def collide(self, car):
+        car_mask = car.get_mask()
+        path_mask = pygame.mask.from_surface(self.image)
+
+        # Car coordinate minus 0 because the path is always drawn at 0, 0
+        offset = (self.x - round(car.x), self.y - round(car.y))
+        collision_point = car_mask.overlap(path_mask, offset)
+
+        if collision_point:
+            return True;
+
+        return False
+
+
+def draw_window(window, car, path, target):
+    window.fill([255,255,40])
+    path.draw(window)
+    target.draw(window)
+    # Car always on top
     car.draw(window)
     pygame.display.update()
+    pygame.display.set_caption("A Neat Car Game")
 
 
 def main():
-    car = Car(200, 200)
+    target = Target(200, 25)
+    path = Path()
+    human_car = Car(550, 700)
     clock = pygame.time.Clock()
     window = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
 
@@ -126,23 +161,29 @@ def main():
                 pygame.quit()
                 quit()
 
-        # Get keypresses
+        # Get keypresses, used for human input
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP]:
-            car.accel()
+            human_car.accel()
             if keys[pygame.K_RIGHT]:
-                car.turnRight()
+                human_car.turnRight()
             if keys[pygame.K_LEFT]:
-                car.turnLeft()
+                human_car.turnLeft()
         if keys[pygame.K_DOWN]:
-            car.decel()
+            human_car.decel()
             if keys[pygame.K_RIGHT]:
-                car.turnRight()
+                human_car.turnRight()
             if keys[pygame.K_LEFT]:
-                car.turnLeft()
+                human_car.turnLeft()
 
-        car.move()
-        draw_window(window, car)
+        # Slow the car down if it is off the path
+        if path.collide(human_car):
+            human_car.setMaxSpeed(2)
+        else:
+            human_car.setMaxSpeed(10)
+
+        human_car.move()
+        draw_window(window, human_car, path, target)
 
 
 main()
