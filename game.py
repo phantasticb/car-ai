@@ -201,7 +201,10 @@ def eval_genomes(genomes, config):
             # Points for existing
 
             distance = math.sqrt((car.x - target.x)**2 + (car.y-target.y)**2)
-            tuple_input = [path.collide(car)]
+
+            # Data that the AI gets
+            tuple_input = [car.x, car.y, distance, path.collide(car), car.tilt, target.x, target.y]
+
             outputs = nets[cars.index(car)].activate(tuple_input)
 
             throttle = outputs[0]
@@ -288,7 +291,7 @@ def run(config_file):
     stats = neat.StatisticsReporter()
     pop.add_reporter(stats)
 
-    winner = pop.run(eval_genomes, 50)
+    winner = pop.run(eval_genomes, 500)
     print("Determined best genome to be {!s}".format(winner))
 
 
