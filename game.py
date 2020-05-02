@@ -3,13 +3,20 @@ import os
 
 import pygame
 import neat
+pygame.font.init()
 
 WIN_WIDTH = 800
 WIN_HEIGHT = 800
+STAT_FONT = pygame.font.SysFont("Arial", 25)
+WINDOW = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
+
+time = 0
+gen = 0
 
 CAR_IMAGE = pygame.transform.scale(pygame.image.load(os.path.join("img", "car.png")), (32, 64))
 PATH_IMAGE = pygame.transform.scale(pygame.image.load(os.path.join("img", "path.png")), (800, 800))
 FINISH_IMAGE = pygame.transform.scale(pygame.image.load(os.path.join("img", "finish.png")), (32, 32))
+VIEWFIELD = pygame.transform.scale(pygame.image.load(os.path.join("img", "sightline.png")), (2, 100))
 
 
 class Car:
@@ -27,6 +34,7 @@ class Car:
         self.acceltick = 0
         self.rottick = 0
         self.image = CAR_IMAGE
+
 
     def accel(self):
         self.velX += math.cos(math.radians(self.tilt))
@@ -110,7 +118,6 @@ class Path:
 
         return False
 
-
 class Target:
     def __init__(self, x, y):
         self.image = FINISH_IMAGE
@@ -134,56 +141,158 @@ class Target:
         return False
 
 
-def draw_window(window, car, path, target):
+def draw_window(window, cars, path, target):
     window.fill([255,255,40])
     path.draw(window)
     target.draw(window)
+
+    score_label = STAT_FONT.render("Generation: " + str(gen), 1, (255, 255, 255))
+    window.blit(score_label, (10, 10))
+
+    time_label = STAT_FONT.render("Time Remaining: " + str(300 -time), 1, (255, 255, 255))
+    window.blit(time_label, (10, 750))
+
+
     # Car always on top
-    car.draw(window)
+    for car in cars:
+        car.draw(window)
+
     pygame.display.update()
     pygame.display.set_caption("A Neat Car Game")
 
 
-def main():
+def eval_genomes(genomes, config):
+    global gen, WINDOW, time
+    gen += 1
+
+    # Creating the list of genomes, neural nets, and car objects
+    nets = []
+    cars = []
+    ge = []
+
+    for genome_id, genome in genomes:
+        genome.fitness = 0
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        nets.append(net)
+        cars.append(Car(550, 700))
+        ge.append(genome)
+
+    # Create the map items
     target = Target(200, 25)
     path = Path()
-    human_car = Car(550, 700)
+
     clock = pygame.time.Clock()
-    window = pygame.display.set_mode((WIN_WIDTH, WIN_HEIGHT))
+    time = 0
 
     run = True
-    while run:
+    while run and len(cars) > 0:
         clock.tick(30)
+        time += 1
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
                 pygame.quit()
                 quit()
+                break
 
-        # Get keypresses, used for human input
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_UP]:
-            human_car.accel()
-            if keys[pygame.K_RIGHT]:
-                human_car.turnRight()
-            if keys[pygame.K_LEFT]:
-                human_car.turnLeft()
-        if keys[pygame.K_DOWN]:
-            human_car.decel()
-            if keys[pygame.K_RIGHT]:
-                human_car.turnRight()
-            if keys[pygame.K_LEFT]:
-                human_car.turnLeft()
+        # Link AI to controls
+        for x, car in enumerate(cars):
+            # Points for existing
 
-        # Slow the car down if it is off the path
-        if path.collide(human_car):
-            human_car.setMaxSpeed(2)
-        else:
-            human_car.setMaxSpeed(10)
+            distance = math.sqrt((car.x - target.x)**2 + (car.y-target.y)**2)
+            tuple_input = [path.collide(car)]
+            outputs = nets[cars.index(car)].activate(tuple_input)
 
-        human_car.move()
-        draw_window(window, human_car, path, target)
+            throttle = outputs[0]
+            turn = outputs[1]
+
+            if throttle > 0.5:
+                car.accel()
+                if turn > 0.5:
+                    car.turnLeft()
+                elif turn < -0.5:
+                    car.turnRight()
+            elif throttle < -0.5:
+                car.decel()
+                if turn > 0.5:
+                    car.turnLeft()
+                elif turn < -0.5:
+                    car.turnRight()
+
+            if path.collide(car):
+                # Points lost for leaving the track
+                car.max_speed = 2
+            else:
+                car.max_speed = 12
+
+            if target.collide(car):
+                ge[x].fitness += 50
+                ge[x].fitness += 300 - time
+                index = cars.index(car)
+                nets.pop(index)
+                ge.pop(index)
+                cars.pop(index)
+
+            car.move()
+
+        # Remove cars that exit the boundaries, punish them heavily
+        for car in cars:
+            if car.x > 800 or car.x < 0 or car.y > 800 or car.y < 0:
+                index = cars.index(car)
+                nets.pop(index)
+                ge.pop(index)
+                cars.pop(index)
+
+        # Remove stragglers and punish them heavily
+        if time > 300:
+            for car in cars:
+                index = cars.index(car)
+                nets.pop(index)
+                ge.pop(index)
+                cars.pop(index)
+
+        draw_window(WINDOW, cars, path, target)
+
+        # # Get keypresses, used for human input
+        # keys = pygame.key.get_pressed()
+        # if keys[pygame.K_UP]:
+        #     human_car.accel()
+        #     if keys[pygame.K_RIGHT]:
+        #         human_car.turnRight()
+        #     if keys[pygame.K_LEFT]:
+        #         human_car.turnLeft()
+        # if keys[pygame.K_DOWN]:
+        #     human_car.decel()
+        #     if keys[pygame.K_RIGHT]:
+        #         human_car.turnRight()
+        #     if keys[pygame.K_LEFT]:
+        #         human_car.turnLeft()
+        #
+        # # Slow the car down if it is off the path
+        # if path.collide(human_car):
+        #     human_car.setMaxSpeed(2)
+        # else:
+        #     human_car.setMaxSpeed(10)
+        #
+        # human_car.move()
 
 
-main()
+def run(config_file):
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                                neat. DefaultSpeciesSet, neat.DefaultStagnation, config_file)
+
+    pop = neat.Population(config)
+
+    pop.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    pop.add_reporter(stats)
+
+    winner = pop.run(eval_genomes, 50)
+    print("Determined best genome to be {!s}".format(winner))
+
+
+if __name__ == "__main__":
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config-feedforward.txt')
+    run(config_path)
